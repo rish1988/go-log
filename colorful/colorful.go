@@ -3,7 +3,10 @@
 
 package colorful
 
-import "github.com/withmandala/go-log/buffer"
+import (
+	"bytes"
+	"github.com/rish1988/go-log/buffer"
+)
 
 // ColorBuffer add color option to buffer append
 type ColorBuffer struct {
@@ -21,6 +24,19 @@ var (
 	colorCyan   = []byte("\033[0;36m")
 	colorGray   = []byte("\033[0;37m")
 )
+
+// RemoveColors removes all the colors from the data
+func (cb *ColorBuffer) RemoveColors() []byte {
+	empty := []byte{}
+	cb.Buffer = bytes.ReplaceAll(cb.Buffer, colorRed, empty)
+	cb.Buffer = bytes.ReplaceAll(cb.Buffer, colorGreen, empty)
+	cb.Buffer = bytes.ReplaceAll(cb.Buffer, colorOrange, empty)
+	cb.Buffer = bytes.ReplaceAll(cb.Buffer, colorBlue, empty)
+	cb.Buffer = bytes.ReplaceAll(cb.Buffer, colorPurple, empty)
+	cb.Buffer = bytes.ReplaceAll(cb.Buffer, colorCyan, empty)
+	cb.Buffer = bytes.ReplaceAll(cb.Buffer, colorGray, empty)
+	return cb.Bytes()
+}
 
 // Off apply no color to the data
 func (cb *ColorBuffer) Off() {
@@ -61,6 +77,8 @@ func (cb *ColorBuffer) Cyan() {
 func (cb *ColorBuffer) Gray() {
 	cb.Append(colorGray)
 }
+
+type Color func([]byte) []byte
 
 // mixer mix the color on and off byte with the actual data
 func mixer(data []byte, color []byte) []byte {
