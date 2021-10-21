@@ -5,6 +5,8 @@ package log
 
 import (
 	"fmt"
+	"github.com/rish1988/go-log/colorful"
+	"github.com/rish1988/go-log/config"
 	"io"
 	"os"
 	"path/filepath"
@@ -12,7 +14,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/withmandala/go-log/colorful"
 	"golang.org/x/crypto/ssh/terminal"
 )
 
@@ -23,15 +24,31 @@ type FdWriter interface {
 	Fd() uintptr
 }
 
+type FdWriters []FdWriter
+
+func NewFdWriters(files ...FdWriter) FdWriters {
+	return files
+}
+
+func (f *FdWriters) Write(p []byte) (n int, err error) {
+	for _, writer := range *f {
+		if n, err = writer.Write(p); err != nil {
+			return n, err
+		}
+	}
+	return len(p), nil
+}
+
 // Logger struct define the underlying storage for single logger
 type Logger struct {
-	mu        sync.RWMutex
-	color     bool
-	out       FdWriter
-	debug     bool
-	timestamp bool
-	quiet     bool
-	buf       colorful.ColorBuffer
+	mu            sync.RWMutex
+	color         bool
+	out           FdWriters
+	debug         bool
+	timestamp     bool
+	quiet         bool
+	colorSettings config.ColorOptions
+	buf           colorful.ColorBuffer
 }
 
 // Prefix struct define plain and color byte
@@ -90,46 +107,104 @@ var (
 	}
 )
 
+type Message struct {
+	Plain []byte
+	Color []byte
+}
+
+type MessageType int
+
+const (
+	Fatal = iota
+	Error
+	Warn
+	Info
+	Debug
+	Trace
+)
+
+func (l *Logger) coloredMessage(messageType MessageType, data string) Message {
+	if len(data) == 0 || data[len(data)-1] != '\n' {
+		data = data + "\n"
+	}
+
+	message := Message{
+		Plain: []byte(data),
+	}
+
+	switch messageType {
+	case Fatal:
+		fatalColor := l.colorSettings.Fatal
+		if fatalColor != nil {
+			message.Color = fatalColor(message.Plain)
+			FatalPrefix.Color = fatalColor(FatalPrefix.Plain)
+		} else {
+			message.Color = colorful.Red(message.Plain)
+		}
+	case Error:
+		errorColor := l.colorSettings.Error
+		if errorColor != nil {
+			message.Color = errorColor(message.Plain)
+			ErrorPrefix.Color = errorColor(ErrorPrefix.Plain)
+		} else {
+			message.Color = colorful.Red(message.Plain)
+		}
+	case Warn:
+		warnColor := l.colorSettings.Warn
+		if warnColor != nil {
+			message.Color = warnColor(message.Plain)
+			WarnPrefix.Color = warnColor(WarnPrefix.Plain)
+		} else {
+			message.Color = colorful.Orange(message.Plain)
+		}
+	case Info:
+		infoColor := l.colorSettings.Info
+		if infoColor != nil {
+			message.Color = infoColor(message.Plain)
+			InfoPrefix.Color = infoColor(InfoPrefix.Plain)
+		} else {
+			message.Color = colorful.Green(message.Plain)
+		}
+	case Debug:
+		debugColor := l.colorSettings.Debug
+		if debugColor != nil {
+			message.Color = debugColor(message.Plain)
+			DebugPrefix.Color = debugColor(DebugPrefix.Plain)
+		} else {
+			message.Color = colorful.Purple(message.Plain)
+		}
+	case Trace:
+		traceColor := l.colorSettings.Trace
+		if traceColor != nil {
+			message.Color = traceColor(message.Plain)
+			TracePrefix.Color = traceColor(TracePrefix.Plain)
+		} else {
+			message.Color = colorful.Cyan(message.Plain)
+		}
+	}
+	return message
+}
+
 // New returns new Logger instance with predefined writer output and
 // automatically detect terminal coloring support
-func New(out FdWriter) *Logger {
-	return &Logger{
-		color:     terminal.IsTerminal(int(out.Fd())),
-		out:       out,
-		timestamp: true,
+func New(out FdWriters, options config.LogOptions) *Logger {
+	var isTerminal bool
+
+	for _, o := range out {
+		if terminal.IsTerminal(int(o.Fd())) {
+			isTerminal = true
+			break
+		}
 	}
-}
 
-// WithColor explicitly turn on colorful features on the log
-func (l *Logger) WithColor() *Logger {
-	l.mu.Lock()
-	defer l.mu.Unlock()
-	l.color = true
-	return l
-}
-
-// WithoutColor explicitly turn off colorful features on the log
-func (l *Logger) WithoutColor() *Logger {
-	l.mu.Lock()
-	defer l.mu.Unlock()
-	l.color = false
-	return l
-}
-
-// WithDebug turn on debugging output on the log to reveal debug and trace level
-func (l *Logger) WithDebug() *Logger {
-	l.mu.Lock()
-	defer l.mu.Unlock()
-	l.debug = true
-	return l
-}
-
-// WithoutDebug turn off debugging output on the log
-func (l *Logger) WithoutDebug() *Logger {
-	l.mu.Lock()
-	defer l.mu.Unlock()
-	l.debug = false
-	return l
+	return &Logger{
+		color:         isTerminal,
+		out:           out,
+		timestamp:     options.TimeStamp,
+		debug:         options.Debug,
+		quiet:         options.Quiet,
+		colorSettings: options.ColorOptions,
+	}
 }
 
 // IsDebug check the state of debugging output
@@ -137,38 +212,6 @@ func (l *Logger) IsDebug() bool {
 	l.mu.RLock()
 	defer l.mu.RUnlock()
 	return l.debug
-}
-
-// WithTimestamp turn on timestamp output on the log
-func (l *Logger) WithTimestamp() *Logger {
-	l.mu.Lock()
-	defer l.mu.Unlock()
-	l.timestamp = true
-	return l
-}
-
-// WithoutTimestamp turn off timestamp output on the log
-func (l *Logger) WithoutTimestamp() *Logger {
-	l.mu.Lock()
-	defer l.mu.Unlock()
-	l.timestamp = false
-	return l
-}
-
-// Quiet turn off all log output
-func (l *Logger) Quiet() *Logger {
-	l.mu.Lock()
-	defer l.mu.Unlock()
-	l.quiet = true
-	return l
-}
-
-// NoQuiet turn on all log output
-func (l *Logger) NoQuiet() *Logger {
-	l.mu.Lock()
-	defer l.mu.Unlock()
-	l.quiet = false
-	return l
 }
 
 // IsQuiet check for quiet state
@@ -179,7 +222,7 @@ func (l *Logger) IsQuiet() bool {
 }
 
 // Output print the actual value
-func (l *Logger) Output(depth int, prefix Prefix, data string) error {
+func (l *Logger) Output(depth int, prefix Prefix, data Message) error {
 	// Check if quiet is requested, and try to return no error and be quiet
 	if l.IsQuiet() {
 		return nil
@@ -260,83 +303,86 @@ func (l *Logger) Output(depth int, prefix Prefix, data string) error {
 			l.buf.Off()
 		}
 	}
+
 	// Print the actual string data from caller
-	l.buf.Append([]byte(data))
-	if len(data) == 0 || data[len(data)-1] != '\n' {
-		l.buf.AppendByte('\n')
+	if l.color {
+		l.buf.Append(data.Color)
+	} else {
+		l.buf.Append(data.Plain)
 	}
+
 	// Flush buffer to output
 	_, err := l.out.Write(l.buf.Buffer)
 	return err
 }
 
-// Fatal print fatal message to output and quit the application with status 1
+// Fatal print fatal coloredMessage to output and quit the application with status 1
 func (l *Logger) Fatal(v ...interface{}) {
-	l.Output(1, FatalPrefix, fmt.Sprintln(v...))
+	l.Output(1, FatalPrefix, l.coloredMessage(Fatal, fmt.Sprintln(v...)))
 	os.Exit(1)
 }
 
-// Fatalf print formatted fatal message to output and quit the application
+// Fatalf print formatted fatal coloredMessage to output and quit the application
 // with status 1
 func (l *Logger) Fatalf(format string, v ...interface{}) {
-	l.Output(1, FatalPrefix, fmt.Sprintf(format, v...))
+	l.Output(1, FatalPrefix, l.coloredMessage(Fatal, fmt.Sprintf(format, v...)))
 	os.Exit(1)
 }
 
-// Error print error message to output
+// Error print error coloredMessage to output
 func (l *Logger) Error(v ...interface{}) {
-	l.Output(1, ErrorPrefix, fmt.Sprintln(v...))
+	l.Output(1, ErrorPrefix, l.coloredMessage(Error, fmt.Sprintln(v...)))
 }
 
-// Errorf print formatted error message to output
+// Errorf print formatted error coloredMessage to output
 func (l *Logger) Errorf(format string, v ...interface{}) {
-	l.Output(1, ErrorPrefix, fmt.Sprintf(format, v...))
+	l.Output(1, ErrorPrefix, l.coloredMessage(Error, fmt.Sprintf(format, v...)))
 }
 
-// Warn print warning message to output
+// Warn print warning coloredMessage to output
 func (l *Logger) Warn(v ...interface{}) {
-	l.Output(1, WarnPrefix, fmt.Sprintln(v...))
+	l.Output(1, WarnPrefix, l.coloredMessage(Warn, fmt.Sprintln(v...)))
 }
 
-// Warnf print formatted warning message to output
+// Warnf print formatted warning coloredMessage to output
 func (l *Logger) Warnf(format string, v ...interface{}) {
-	l.Output(1, WarnPrefix, fmt.Sprintf(format, v...))
+	l.Output(1, WarnPrefix, l.coloredMessage(Warn, fmt.Sprintf(format, v...)))
 }
 
-// Info print informational message to output
+// Info print informational coloredMessage to output
 func (l *Logger) Info(v ...interface{}) {
-	l.Output(1, InfoPrefix, fmt.Sprintln(v...))
+	l.Output(1, InfoPrefix, l.coloredMessage(Info, fmt.Sprintln(v...)))
 }
 
-// Infof print formatted informational message to output
+// Infof print formatted informational coloredMessage to output
 func (l *Logger) Infof(format string, v ...interface{}) {
-	l.Output(1, InfoPrefix, fmt.Sprintf(format, v...))
+	l.Output(1, InfoPrefix, l.coloredMessage(Info, fmt.Sprintf(format, v...)))
 }
 
-// Debug print debug message to output if debug output enabled
+// Debug print debug coloredMessage to output if debug output enabled
 func (l *Logger) Debug(v ...interface{}) {
 	if l.IsDebug() {
-		l.Output(1, DebugPrefix, fmt.Sprintln(v...))
+		l.Output(1, DebugPrefix, l.coloredMessage(Debug, fmt.Sprintln(v...)))
 	}
 }
 
-// Debugf print formatted debug message to output if debug output enabled
+// Debugf print formatted debug coloredMessage to output if debug output enabled
 func (l *Logger) Debugf(format string, v ...interface{}) {
 	if l.IsDebug() {
-		l.Output(1, DebugPrefix, fmt.Sprintf(format, v...))
+		l.Output(1, DebugPrefix, l.coloredMessage(Debug, fmt.Sprintf(format, v...)))
 	}
 }
 
-// Trace print trace message to output if debug output enabled
+// Trace print trace coloredMessage to output if debug output enabled
 func (l *Logger) Trace(v ...interface{}) {
 	if l.IsDebug() {
-		l.Output(1, TracePrefix, fmt.Sprintln(v...))
+		l.Output(1, TracePrefix, l.coloredMessage(Trace, fmt.Sprintln(v...)))
 	}
 }
 
-// Tracef print formatted trace message to output if debug output enabled
+// Tracef print formatted trace coloredMessage to output if debug output enabled
 func (l *Logger) Tracef(format string, v ...interface{}) {
 	if l.IsDebug() {
-		l.Output(1, TracePrefix, fmt.Sprintf(format, v...))
+		l.Output(1, TracePrefix, l.coloredMessage(Trace, fmt.Sprintf(format, v...)))
 	}
 }
