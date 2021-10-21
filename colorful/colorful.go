@@ -3,7 +3,9 @@
 
 package colorful
 
-import "github.com/withmandala/go-log/buffer"
+import (
+	"github.com/rish1988/go-log/buffer"
+)
 
 // ColorBuffer add color option to buffer append
 type ColorBuffer struct {
@@ -61,6 +63,8 @@ func (cb *ColorBuffer) Cyan() {
 func (cb *ColorBuffer) Gray() {
 	cb.Append(colorGray)
 }
+
+type Color func([]byte) []byte
 
 // mixer mix the color on and off byte with the actual data
 func mixer(data []byte, color []byte) []byte {

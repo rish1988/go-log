@@ -38,5 +38,5 @@ func (b *Buffer) AppendInt(val int, width int) {
 
 // Bytes return underlying slice data
 func (b Buffer) Bytes() []byte {
-	return []byte(b)
+	return b
 }
