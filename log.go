@@ -5,6 +5,7 @@ package log
 
 import (
 	"fmt"
+	"github.com/rish1988/go-log/colorful"
 	"io"
 	"os"
 	"path/filepath"
@@ -12,7 +13,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/withmandala/go-log/colorful"
 	"golang.org/x/crypto/ssh/terminal"
 )
 
@@ -89,6 +89,48 @@ var (
 		Color: colorful.Cyan(plainTrace),
 	}
 )
+
+type Message struct {
+	Plain []byte
+	Color []byte
+}
+
+type MessageType int
+
+const (
+	Fatal = iota
+	Error
+	Warn
+	Info
+	Debug
+	Trace
+)
+
+func NewMessage(messageType MessageType, data string) Message {
+	if len(data) == 0 || data[len(data)-1] != '\n' {
+		data = data + "\n"
+	}
+
+	message := Message{
+		Plain: []byte(data),
+	}
+
+	switch messageType {
+	case Fatal:
+		message.Color = colorful.Red(message.Plain)
+	case Error:
+		message.Color = colorful.Red(message.Plain)
+	case Warn:
+		message.Color = colorful.Orange(message.Plain)
+	case Info:
+		message.Color = colorful.Green(message.Plain)
+	case Debug:
+		message.Color = colorful.Purple(message.Plain)
+	case Trace:
+		message.Color = colorful.Cyan(message.Plain)
+	}
+	return message
+}
 
 // New returns new Logger instance with predefined writer output and
 // automatically detect terminal coloring support
@@ -179,7 +221,7 @@ func (l *Logger) IsQuiet() bool {
 }
 
 // Output print the actual value
-func (l *Logger) Output(depth int, prefix Prefix, data string) error {
+func (l *Logger) Output(depth int, prefix Prefix, data Message) error {
 	// Check if quiet is requested, and try to return no error and be quiet
 	if l.IsQuiet() {
 		return nil
@@ -260,11 +302,18 @@ func (l *Logger) Output(depth int, prefix Prefix, data string) error {
 			l.buf.Off()
 		}
 	}
-	// Print the actual string data from caller
-	l.buf.Append([]byte(data))
-	if len(data) == 0 || data[len(data)-1] != '\n' {
-		l.buf.AppendByte('\n')
+
+	if l.color {
+		l.buf.Append(data.Color)
+	} else {
+		l.buf.Append(data.Plain)
 	}
+
+	// Print the actual string data from caller
+	//l.buf.Append([]byte(data))
+	//if len(data) == 0 || data[len(data)-1] != '\n' {
+	//	l.buf.AppendByte('\n')
+	//}
 	// Flush buffer to output
 	_, err := l.out.Write(l.buf.Buffer)
 	return err
@@ -272,71 +321,71 @@ func (l *Logger) Output(depth int, prefix Prefix, data string) error {
 
 // Fatal print fatal message to output and quit the application with status 1
 func (l *Logger) Fatal(v ...interface{}) {
-	l.Output(1, FatalPrefix, fmt.Sprintln(v...))
+	l.Output(1, FatalPrefix, NewMessage(Fatal, fmt.Sprintln(v...)))
 	os.Exit(1)
 }
 
 // Fatalf print formatted fatal message to output and quit the application
 // with status 1
 func (l *Logger) Fatalf(format string, v ...interface{}) {
-	l.Output(1, FatalPrefix, fmt.Sprintf(format, v...))
+	l.Output(1, FatalPrefix, NewMessage(Fatal, fmt.Sprintf(format, v...)))
 	os.Exit(1)
 }
 
 // Error print error message to output
 func (l *Logger) Error(v ...interface{}) {
-	l.Output(1, ErrorPrefix, fmt.Sprintln(v...))
+	l.Output(1, ErrorPrefix, NewMessage(Error, fmt.Sprintln(v...)))
 }
 
 // Errorf print formatted error message to output
 func (l *Logger) Errorf(format string, v ...interface{}) {
-	l.Output(1, ErrorPrefix, fmt.Sprintf(format, v...))
+	l.Output(1, ErrorPrefix, NewMessage(Error, fmt.Sprintf(format, v...)))
 }
 
 // Warn print warning message to output
 func (l *Logger) Warn(v ...interface{}) {
-	l.Output(1, WarnPrefix, fmt.Sprintln(v...))
+	l.Output(1, WarnPrefix, NewMessage(Warn, fmt.Sprintln(v...)))
 }
 
 // Warnf print formatted warning message to output
 func (l *Logger) Warnf(format string, v ...interface{}) {
-	l.Output(1, WarnPrefix, fmt.Sprintf(format, v...))
+	l.Output(1, WarnPrefix, NewMessage(Warn, fmt.Sprintf(format, v...)))
 }
 
 // Info print informational message to output
 func (l *Logger) Info(v ...interface{}) {
-	l.Output(1, InfoPrefix, fmt.Sprintln(v...))
+	l.Output(1, InfoPrefix, NewMessage(Info, fmt.Sprintln(v...)))
 }
 
 // Infof print formatted informational message to output
 func (l *Logger) Infof(format string, v ...interface{}) {
-	l.Output(1, InfoPrefix, fmt.Sprintf(format, v...))
+	l.Output(1, InfoPrefix, NewMessage(Info, fmt.Sprintf(format, v...)))
 }
 
 // Debug print debug message to output if debug output enabled
 func (l *Logger) Debug(v ...interface{}) {
 	if l.IsDebug() {
-		l.Output(1, DebugPrefix, fmt.Sprintln(v...))
+		l.Output(1, DebugPrefix, NewMessage(Debug, fmt.Sprintln(v...)))
 	}
 }
 
 // Debugf print formatted debug message to output if debug output enabled
 func (l *Logger) Debugf(format string, v ...interface{}) {
 	if l.IsDebug() {
-		l.Output(1, DebugPrefix, fmt.Sprintf(format, v...))
+		l.Output(1, DebugPrefix, NewMessage(Debug, fmt.Sprintf(format, v...)))
 	}
 }
 
 // Trace print trace message to output if debug output enabled
 func (l *Logger) Trace(v ...interface{}) {
 	if l.IsDebug() {
-		l.Output(1, TracePrefix, fmt.Sprintln(v...))
+		l.Output(1, TracePrefix, NewMessage(Trace, fmt.Sprintln(v...)))
 	}
 }
 
 // Tracef print formatted trace message to output if debug output enabled
 func (l *Logger) Tracef(format string, v ...interface{}) {
 	if l.IsDebug() {
-		l.Output(1, TracePrefix, fmt.Sprintf(format, v...))
+		l.Output(1, TracePrefix, NewMessage(Trace, fmt.Sprintf(format, v...)))
 	}
 }
