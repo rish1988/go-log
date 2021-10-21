@@ -31,7 +31,7 @@ And import it to your package by
 
 ```go
 import (
-    "github.com/withmandala/go-log"
+    "github.com/rish1988/go-log"
 )
 ```
 
