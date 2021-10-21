@@ -5,6 +5,7 @@ package log
 
 import (
 	"fmt"
+	"github.com/rish1988/go-log/colorful"
 	"io"
 	"os"
 	"path/filepath"
@@ -12,7 +13,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/withmandala/go-log/colorful"
 	"golang.org/x/crypto/ssh/terminal"
 )
 
@@ -260,6 +260,13 @@ func (l *Logger) Output(depth int, prefix Prefix, data string) error {
 			l.buf.Off()
 		}
 	}
+
+	if l.color {
+		l.buf.Append(prefix.Color)
+	} else {
+		l.buf.Append(prefix.Plain)
+	}
+
 	// Print the actual string data from caller
 	l.buf.Append([]byte(data))
 	if len(data) == 0 || data[len(data)-1] != '\n' {

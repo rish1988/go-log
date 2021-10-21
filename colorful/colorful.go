@@ -3,7 +3,9 @@
 
 package colorful
 
-import "github.com/withmandala/go-log/buffer"
+import (
+	"github.com/rish1988/go-log/buffer"
+)
 
 // ColorBuffer add color option to buffer append
 type ColorBuffer struct {
