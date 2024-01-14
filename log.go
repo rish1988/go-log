@@ -62,6 +62,7 @@ type Logger struct {
 	colorBuf      colorful.ColorBuffer
 	noColorBuf    colorful.ColorBuffer
 	cron          *cron.Cron
+	logFile       *os.File
 }
 
 // Prefix struct define plain and color byte
@@ -275,6 +276,7 @@ func getLogger(opts config.LogOptions) *Logger {
 		debug:         opts.Debug,
 		quiet:         opts.Quiet,
 		colorSettings: opts.ColorOptions,
+		logFile:       file,
 	}
 }
 
@@ -301,6 +303,10 @@ func logFile(logsDir, fileName, dateFormat string) *os.File {
 	} else {
 		return nil
 	}
+}
+
+func (l *Logger) GetLogFile() *os.File {
+	return l.logFile
 }
 
 func (l *Logger) Stop() error {
