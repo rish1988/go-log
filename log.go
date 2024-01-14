@@ -13,9 +13,11 @@ import (
 	"io"
 	"math"
 	"os"
+	"os/signal"
 	"path/filepath"
 	"runtime"
 	"sync"
+	"syscall"
 	"time"
 
 	"golang.org/x/crypto/ssh/terminal"
@@ -235,7 +237,27 @@ func New(out FdWriters, options config.LogOptions) *Logger {
 		}
 		c.Start()
 
-		log.cron = c
+		shutDown := make(chan os.Signal, 1)
+
+		signal.Notify(
+			shutDown,
+			syscall.SIGINT,
+			syscall.SIGTERM,
+			syscall.SIGKILL,
+			os.Interrupt,
+			os.Kill,
+		)
+
+		go func() {
+			for {
+				select {
+				case <-shutDown:
+					fmt.Printf("Stopping logger.\n")
+					c.Stop()
+					return
+				}
+			}
+		}()
 
 		return log
 	}
@@ -307,13 +329,6 @@ func logFile(logsDir, fileName, dateFormat string) *os.File {
 
 func (l *Logger) GetLogFile() *os.File {
 	return l.logFile
-}
-
-func (l *Logger) Stop() error {
-	if l.cron != nil {
-		return l.Stop()
-	}
-	return nil
 }
 
 // IsDebug check the state of debugging output
