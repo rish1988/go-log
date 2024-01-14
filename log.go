@@ -7,7 +7,11 @@ import (
 	"fmt"
 	"github.com/rish1988/go-log/colorful"
 	"github.com/rish1988/go-log/config"
+	"github.com/rish1988/go-log/cronjob"
+	"github.com/rish1988/go-log/files"
+	"github.com/robfig/cron"
 	"io"
+	"math"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -57,6 +61,7 @@ type Logger struct {
 	colorSettings config.ColorOptions
 	colorBuf      colorful.ColorBuffer
 	noColorBuf    colorful.ColorBuffer
+	cron          *cron.Cron
 }
 
 // Prefix struct define plain and color byte
@@ -196,23 +201,109 @@ func (l *Logger) coloredMessage(messageType MessageType, data string) Message {
 // New returns new Logger instance with predefined writer output and
 // automatically detect terminal coloring support
 func New(out FdWriters, options config.LogOptions) *Logger {
-	var isTerminal bool
+	if options.FileOptions != nil && files.DirExists(options.LogsDir) {
+		log := getLogger(options)
+		c := cronjob.NewCron(options.TimeZone)
 
-	for _, o := range out {
-		if terminal.IsTerminal(int(o.Fd())) {
-			isTerminal = true
-			break
+		var (
+			cronInterval string
+			maxFileCount int
+		)
+
+		if options.RotationPolicyOptions != nil {
+			cronInterval = options.RotationInterval
+			maxFileCount = options.MaxFiles
+		} else {
+			cronInterval = "@midnight"
+			maxFileCount = math.MaxInt64
 		}
+
+		if err := c.AddJob(cronInterval, cron.FuncJob(func() {
+			log = getLogger(options)
+			time.Sleep(time.Second)
+		})); err != nil {
+			fmt.Printf("Failed to add logger cronjob. Reason: %s\n", err)
+			return log
+		}
+
+		if err := c.AddJob(cronInterval, cron.FuncJob(func() {
+			cleanupOldLogs(options.LogsDir, maxFileCount)
+		})); err != nil {
+			fmt.Printf("Failed to add logger cronjob to remove old log files. Reason: %s\n", err)
+			return log
+		}
+		return log
 	}
 
 	return &Logger{
-		color:         isTerminal,
+		color:         isTerminal(out),
 		out:           out,
 		timestamp:     options.TimeStamp,
 		debug:         options.Debug,
 		quiet:         options.Quiet,
 		colorSettings: options.ColorOptions,
 	}
+}
+
+func isTerminal(out FdWriters) bool {
+	for _, o := range out {
+		if terminal.IsTerminal(int(o.Fd())) {
+			return true
+		}
+	}
+	return false
+}
+
+func getLogger(opts config.LogOptions) *Logger {
+	var writers FdWriters
+	file := logFile(opts.LogsDir, opts.FileName, opts.DateFormat)
+
+	if file != nil {
+		writers = NewFdWriters(os.Stderr, file)
+	} else {
+		writers = NewFdWriters(os.Stderr)
+	}
+
+	return &Logger{
+		color:         isTerminal(writers),
+		out:           writers,
+		timestamp:     opts.TimeStamp,
+		debug:         opts.Debug,
+		quiet:         opts.Quiet,
+		colorSettings: opts.ColorOptions,
+	}
+}
+
+func cleanupOldLogs(logsDir string, maxDays int) {
+	if rxlogs, err := files.Remove(logsDir, maxDays); err != nil {
+		fmt.Printf("%v\n", err)
+	} else {
+		for _, rfile := range rxlogs {
+			fmt.Printf("Removing old log file [ %s ] \n", rfile)
+		}
+	}
+}
+
+func logFile(logsDir, fileName, dateFormat string) *os.File {
+	t := time.Now()
+	date := t.Format(dateFormat)
+	if len(logsDir) != 0 {
+		logFileName := fmt.Sprintf("%s/%s-%s.log", logsDir, fileName, date)
+		if file, err := os.OpenFile(logFileName, os.O_APPEND|os.O_WRONLY|os.O_CREATE, 0600); err != nil {
+			return nil
+		} else {
+			return file
+		}
+	} else {
+		return nil
+	}
+}
+
+func (l *Logger) Stop() error {
+	if l.cron != nil {
+		return l.Stop()
+	}
+	return nil
 }
 
 // IsDebug check the state of debugging output
@@ -296,7 +387,7 @@ func (l *Logger) Output(depth int, prefix Prefix, data Message) error {
 		l.colorBuf.AppendByte(' ')
 		l.noColorBuf.AppendByte(' ')
 
-		hour, min, sec := now.Clock()
+		hour, minutes, sec := now.Clock()
 
 		l.colorBuf.AppendInt(hour, 2)
 		l.noColorBuf.AppendInt(hour, 2)
@@ -304,8 +395,8 @@ func (l *Logger) Output(depth int, prefix Prefix, data Message) error {
 		l.colorBuf.AppendByte(':')
 		l.noColorBuf.AppendByte(':')
 
-		l.colorBuf.AppendInt(min, 2)
-		l.noColorBuf.AppendInt(min, 2)
+		l.colorBuf.AppendInt(minutes, 2)
+		l.noColorBuf.AppendInt(minutes, 2)
 
 		l.colorBuf.AppendByte(':')
 		l.noColorBuf.AppendByte(':')
