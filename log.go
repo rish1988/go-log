@@ -232,6 +232,10 @@ func New(out FdWriters, options config.LogOptions) *Logger {
 			fmt.Printf("Failed to add logger cronjob to remove old log files. Reason: %s\n", err)
 			return log
 		}
+		c.Start()
+
+		log.cron = c
+
 		return log
 	}
 
