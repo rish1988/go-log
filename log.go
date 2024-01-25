@@ -13,11 +13,9 @@ import (
 	"io"
 	"math"
 	"os"
-	"os/signal"
 	"path/filepath"
 	"runtime"
 	"sync"
-	"syscall"
 	"time"
 
 	"golang.org/x/crypto/ssh/terminal"
@@ -65,6 +63,8 @@ type Logger struct {
 	noColorBuf    colorful.ColorBuffer
 	cron          *cron.Cron
 	logFile       *os.File
+	timeFormat    string
+	timeZone      *time.Location
 }
 
 // Prefix struct define plain and color byte
@@ -237,21 +237,10 @@ func New(out FdWriters, options config.LogOptions) *Logger {
 		}
 		c.Start()
 
-		shutDown := make(chan os.Signal, 1)
-
-		signal.Notify(
-			shutDown,
-			syscall.SIGINT,
-			syscall.SIGTERM,
-			syscall.SIGKILL,
-			os.Interrupt,
-			os.Kill,
-		)
-
 		go func() {
 			for {
 				select {
-				case <-shutDown:
+				case <-options.Context.Done():
 					fmt.Printf("Stopping logger.\n")
 					c.Stop()
 					return
@@ -269,6 +258,8 @@ func New(out FdWriters, options config.LogOptions) *Logger {
 		debug:         options.Debug,
 		quiet:         options.Quiet,
 		colorSettings: options.ColorOptions,
+		timeZone:      time.Now().Location(),
+		timeFormat:    "02-Jan-2006",
 	}
 }
 
@@ -282,8 +273,27 @@ func isTerminal(out FdWriters) bool {
 }
 
 func getLogger(opts config.LogOptions) *Logger {
-	var writers FdWriters
+	var (
+		writers    FdWriters
+		location   *time.Location
+		timeZone   string
+		dateFormat string
+		err        error
+	)
+
 	file := logFile(opts.LogsDir, opts.FileName, opts.DateFormat)
+
+	if len(opts.TimeZone) == 0 {
+		timeZone = "Local"
+	}
+
+	if location, err = time.LoadLocation(timeZone); err != nil {
+		fmt.Printf("Invalid timezone %s", timeZone)
+	}
+
+	if len(opts.DateFormat) == 0 {
+		dateFormat = "02-Jan-2006"
+	}
 
 	if file != nil {
 		writers = NewFdWriters(os.Stderr, file)
@@ -299,6 +309,8 @@ func getLogger(opts config.LogOptions) *Logger {
 		quiet:         opts.Quiet,
 		colorSettings: opts.ColorOptions,
 		logFile:       file,
+		timeFormat:    dateFormat,
+		timeZone:      location,
 	}
 }
 
@@ -352,7 +364,7 @@ func (l *Logger) Output(depth int, prefix Prefix, data Message) error {
 		return nil
 	}
 	// Get current time
-	now := time.Now()
+	now := time.Now().In(l.timeZone)
 	// Temporary storage for file and line tracing
 	var file string
 	var line int
@@ -393,21 +405,9 @@ func (l *Logger) Output(depth int, prefix Prefix, data Message) error {
 			l.colorBuf.Blue()
 		}
 		// Print date and time
-		year, month, day := now.Date()
-		l.colorBuf.AppendInt(year, 4)
-		l.noColorBuf.AppendInt(year, 4)
 
-		l.colorBuf.AppendByte('/')
-		l.noColorBuf.AppendByte('/')
-
-		l.colorBuf.AppendInt(int(month), 2)
-		l.noColorBuf.AppendInt(int(month), 2)
-
-		l.colorBuf.AppendByte('/')
-		l.noColorBuf.AppendByte('/')
-
-		l.colorBuf.AppendInt(day, 2)
-		l.noColorBuf.AppendInt(day, 2)
+		l.colorBuf.Append([]byte(now.Format(l.timeFormat)))
+		l.noColorBuf.Append([]byte(now.Format(l.timeFormat)))
 
 		l.colorBuf.AppendByte(' ')
 		l.noColorBuf.AppendByte(' ')

@@ -1,12 +1,14 @@
 package config
 
 import (
+	"context"
 	"github.com/rish1988/go-log/colorful"
 )
 
 type LogOptions struct {
 	ColorOptions
 	*FileOptions
+	context.Context
 	Debug bool
 }
 
