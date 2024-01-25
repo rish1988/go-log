@@ -206,7 +206,7 @@ func (l *Logger) coloredMessage(messageType MessageType, data string) Message {
 func New(out FdWriters, options config.LogOptions) *Logger {
 	if options.FileOptions != nil && files.DirExists(options.LogsDir) {
 		log := getLogger(options)
-		c := cronjob.NewCron(options.TimeZone)
+		log.cron = cronjob.NewCron(options.TimeZone)
 
 		var (
 			cronInterval string
@@ -221,7 +221,7 @@ func New(out FdWriters, options config.LogOptions) *Logger {
 			maxFileCount = math.MaxInt64
 		}
 
-		if err := c.AddJob(cronInterval, cron.FuncJob(func() {
+		if err := log.cron.AddJob(cronInterval, cron.FuncJob(func() {
 			log = getLogger(options)
 			time.Sleep(time.Second)
 		})); err != nil {
@@ -229,20 +229,20 @@ func New(out FdWriters, options config.LogOptions) *Logger {
 			return log
 		}
 
-		if err := c.AddJob(cronInterval, cron.FuncJob(func() {
+		if err := log.cron.AddJob(cronInterval, cron.FuncJob(func() {
 			cleanupOldLogs(options.LogsDir, maxFileCount)
 		})); err != nil {
 			fmt.Printf("Failed to add logger cronjob to remove old log files. Reason: %s\n", err)
 			return log
 		}
-		c.Start()
+		log.cron.Start()
 
 		go func() {
 			for {
 				select {
 				case <-options.Context.Done():
 					fmt.Printf("Stopping logger.\n")
-					c.Stop()
+					log.cron.Stop()
 					return
 				}
 			}
@@ -274,16 +274,16 @@ func isTerminal(out FdWriters) bool {
 
 func getLogger(opts config.LogOptions) *Logger {
 	var (
-		writers    FdWriters
-		location   *time.Location
-		timeZone   string
-		dateFormat string
-		err        error
+		writers  FdWriters
+		location *time.Location
+		err      error
 	)
 
 	file := logFile(opts.LogsDir, opts.FileName, opts.DateFormat)
+	timeZone := opts.TimeZone
+	dateFormat := opts.DateFormat
 
-	if len(opts.TimeZone) == 0 {
+	if len(timeZone) == 0 {
 		timeZone = "Local"
 	}
 
@@ -291,7 +291,7 @@ func getLogger(opts config.LogOptions) *Logger {
 		fmt.Printf("Invalid timezone %s", timeZone)
 	}
 
-	if len(opts.DateFormat) == 0 {
+	if len(dateFormat) == 0 {
 		dateFormat = "02-Jan-2006"
 	}
 
