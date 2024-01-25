@@ -274,16 +274,16 @@ func isTerminal(out FdWriters) bool {
 
 func getLogger(opts config.LogOptions) *Logger {
 	var (
-		writers    FdWriters
-		location   *time.Location
-		timeZone   string
-		dateFormat string
-		err        error
+		writers  FdWriters
+		location *time.Location
+		err      error
 	)
 
 	file := logFile(opts.LogsDir, opts.FileName, opts.DateFormat)
+	timeZone := opts.TimeZone
+	dateFormat := opts.DateFormat
 
-	if len(opts.TimeZone) == 0 {
+	if len(timeZone) == 0 {
 		timeZone = "Local"
 	}
 
@@ -291,7 +291,7 @@ func getLogger(opts config.LogOptions) *Logger {
 		fmt.Printf("Invalid timezone %s", timeZone)
 	}
 
-	if len(opts.DateFormat) == 0 {
+	if len(dateFormat) == 0 {
 		dateFormat = "02-Jan-2006"
 	}
 
