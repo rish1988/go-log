@@ -328,7 +328,9 @@ func logFile(logsDir, fileName, dateFormat string) *os.File {
 }
 
 func (l *Logger) Stop() {
-	l.cron.Stop()
+	if l.cron != nil {
+		l.cron.Stop()
+	}
 }
 
 func (l *Logger) GetLogFile() *os.File {
